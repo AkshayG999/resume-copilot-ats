@@ -1,4 +1,8 @@
 import streamlit as st
+from pdf_utils import extract_text_from_pdf, convert_to_pdf
+from openai_utils import parse_resume_text, analyze_resume_ats, optimize_resume
+from job_utils import extract_job_details
+from cover_letter_utils import generate_cover_letter
 from io import StringIO
 import PyPDF2
 import openai
@@ -16,95 +20,6 @@ load_dotenv()
 # Get API key from environment variable
 OPENAI_API_KEY = os.getenv('OPENAI_API_KEY')
 
-def extract_text_from_pdf(file):
-    try:
-        pdf_reader = PyPDF2.PdfReader(file)
-        text = ""
-        for page in pdf_reader.pages:
-            text += page.extract_text()
-        return text
-    except Exception as e:
-        st.error(f"Error reading PDF: {str(e)}")
-        return None
-
-def parse_resume_text(text):
-    try:
-        # Use OpenAI to extract structured information from resume
-        client = openai.OpenAI(api_key=OPENAI_API_KEY)
-        response = client.chat.completions.create(
-            model="gpt-4o",
-            messages=[
-                {"role": "system", "content": "You are a resume parser. Extract and format the information exactly as requested."},
-                {"role": "user", "content": f"""Please extract and format the following information from this resume:
-
-Full Name:
-[Extract full name]
-
-Contact Information:
-[Extract email, phone, location]
-
-Technical Skills:
-- [Skill 1]
-- [Skill 2]
-- [Skill 3]
-- [Skill 4]
-- ...
-
-Notable Projects/Achievements (top 3):
-- [Project 1]
-- [Project 2]
-- [Project 3]
-
-Resume text:
-{text}"""}
-            ]
-        )
-        
-        parsed_info = response.choices[0].message.content.strip()
-        
-        # Initialize default values
-        name = "Unknown Name"
-        contact = "No contact information provided"
-        skills = []
-        projects = []
-        
-        # Parse sections more robustly
-        sections = parsed_info.split('\n\n')
-        for section in sections:
-            section = section.strip()
-            if section.startswith('Full Name:'):
-                name = section.replace('Full Name:', '').strip()
-            elif section.startswith('Contact Information:'):
-                contact = section.replace('Contact Information:', '').strip()
-            elif section.startswith('Technical Skills'):
-                skills = [s.strip().replace('- ', '') for s in section.split('\n')[1:] if s.strip()]
-            elif section.startswith('Notable Projects'):
-                projects = [p.strip().replace('- ', '') for p in section.split('\n')[1:] if p.strip()]
-        
-        # Ensure we have at least some default values
-        if not skills:
-            skills = ["Technical skill not found"]
-        if not projects:
-            projects = ["Project details not found"]
-        
-        # Create the structured output
-        return {
-            'name': name or "Unknown Name",
-            'contact': contact or "No contact information provided",
-            'skills': skills[:4],  # Keep top 4 skills
-            'projects': projects[:3]  # Keep top 3 projects
-        }
-        
-    except Exception as e:
-        st.error(f"Error parsing resume: {str(e)}")
-        st.write("Debug info:", parsed_info)  # Add debug information
-        # Return default information instead of None
-        return {
-            'name': "Unknown Name",
-            'contact': "No contact information provided",
-            'skills': ["Technical skill not specified"],
-            'projects': ["Project details not specified"]
-        }
 
 def extract_candidate_info(resume_path=None, uploaded_file=None):
     # Default candidate info as fallback
@@ -136,70 +51,6 @@ def extract_candidate_info(resume_path=None, uploaded_file=None):
     # Fallback to default resume if no upload or parsing failed
     return default_info
 
-# Function to extract job details from a URL or manual inputs
-def extract_job_details(job_url=None, manual_company=None, manual_position=None):
-    # Initialize default values
-    company_name = manual_company or "Unknown Company"
-    position = manual_position or "Unknown Position"
-    job_description = "No job description available."
-    
-    # Only try to fetch from URL if provided and no manual inputs
-    if job_url and not (manual_company and manual_position):
-        try:
-            response = requests.get(job_url)
-            response.raise_for_status()
-            soup = BeautifulSoup(response.text, 'html.parser')
-            
-            # Try to extract meta tags, with fallbacks
-            if not manual_company:
-                meta_company = soup.find('meta', {'property': 'og:site_name'})
-                if meta_company and meta_company.get('content'):
-                    company_name = meta_company['content']
-            
-            if not manual_position:
-                meta_title = soup.find('meta', {'property': 'og:title'})
-                if meta_title and meta_title.get('content'):
-                    position = meta_title['content']
-                
-            meta_desc = soup.find('meta', {'property': 'og:description'})
-            if meta_desc and meta_desc.get('content'):
-                job_description = meta_desc['content']
-                
-        except Exception as e:
-            st.error(f"Error fetching job details: {str(e)}")
-    
-    # Use OpenAI to analyze job description
-    try:
-        client = openai.OpenAI(api_key=OPENAI_API_KEY)
-        response = client.chat.completions.create(
-            model="gpt-4o",
-            messages=[
-                {"role": "system", "content": "You are a professional cover letter writer. Create unique, specific content without placeholder text."},
-                {"role": "user", "content": f"""Create two detailed paragraphs for a cover letter about a {position} role at {company_name}:
-                1. Technical qualifications and role alignment (focus on specific skills and experience needed)
-                2. Company-specific interest and culture fit (focus on company's industry impact and innovation)
-                
-                Context: {job_description}
-                
-                Important: Do not include any placeholder text like [Your Name] or [Company Address]. Write complete, specific paragraphs."""}
-            ],
-            max_tokens=250
-        )
-        
-        analysis = response.choices[0].message.content.strip()
-        try:
-            alignment, why_company = analysis.split('\n\n', 1)
-        except ValueError:
-            alignment = analysis
-            why_company = "The company offers exciting opportunities for growth and innovation."
-            
-    except Exception as e:
-        st.error(f"Error generating job analysis: {str(e)}")
-        alignment = "The role requires strong technical skills and problem-solving abilities."
-        why_company = "The company offers exciting opportunities for growth and innovation."
-    
-    return company_name, position, alignment, why_company
-
 def format_address(contact_info):
     """Format contact information into proper address blocks"""
     lines = []
@@ -221,184 +72,6 @@ def format_address(contact_info):
         'phone': info.get('phone', ''),
         'location': info.get('location', '')
     }
-
-# Function to generate the cover letter
-def generate_cover_letter(company_name, position, hiring_manager, alignment, why_company, candidate_info, letter_type="standard"):
-    """Generate cover letter with specified length and style"""
-    company_name = company_name.strip()
-    position = position.strip()
-    current_date = date.today().strftime("%B %d, %Y")
-    contact_info = format_address(candidate_info['contact'])
-    
-    # Template configurations for different letter types
-    templates = {
-        "brief": {
-            "skills_count": 4,
-            "intro": f"I am writing to express my interest in the {position} position at {company_name}. With proven expertise in software development and a track record of delivering impactful solutions,",
-            "skills_intro": "Key technical skills:",
-            "closing": "I would welcome the opportunity to discuss how my skills align with your needs."
-        },
-        "standard": {
-            "skills_count": 5,
-            "intro": f"I am writing to express my strong interest in the {position} position at {company_name}. With a solid foundation in software development and a proven track record of developing scalable applications,",
-            "skills_intro": "My key technical competencies include:",
-            "closing": "I am eager to bring my collaborative approach and technical excellence to your team."
-        },
-        "detailed": {
-            "skills_count": 6,
-            "intro": f"I am writing to express my strong interest in the {position} position at {company_name}. As a software developer with demonstrated expertise in building scalable applications and innovative solutions,",
-            "skills_intro": "My comprehensive technical skill set includes:",
-            "closing": "I am eager to bring my collaborative approach, strong problem-solving abilities, and dedication to technical excellence to your engineering team."
-        }
-    }
-    
-    template = templates.get(letter_type, templates["standard"])
-    
-    # Format skills based on letter type
-    skills = candidate_info['skills'][:template["skills_count"]]
-    skills_list = '\n'.join(f"  - {skill}" for skill in skills)
-    
-    # Get most relevant project
-    relevant_project = candidate_info['projects'][0] if candidate_info['projects'] else "various technical projects"
-    
-    # Generate letter content based on type
-    letter_content = f"""{candidate_info['name']}
-{contact_info['location']}
-{contact_info['phone']}
-{contact_info['email']}
-
-{current_date}
-
-{hiring_manager if hiring_manager else 'Hiring Manager'}
-{company_name}
-{position} Division
-
-Dear {hiring_manager if hiring_manager else 'Hiring Manager'},
-
-{template["intro"]} I am confident in my ability to contribute effectively to your innovative team.
-
-{alignment if letter_type != "brief" else alignment.split('.')[0] + '.'}\n
-{"" if letter_type == "brief" else why_company}
-{template["skills_intro"]}
-{skills_list}
-
-{"" if letter_type == "brief" else f"These skills, combined with my experience in {relevant_project}, demonstrate my ability to deliver impactful solutions that drive business value. "}
-{template["closing"]}
-
-Thank you for considering my application.
-
-Best regards,
-{candidate_info['name']}
-
-"""
-
-    return letter_content
-
-def convert_to_pdf(cover_letter):
-    """Convert cover letter text to PDF format"""
-    # Create PDF with larger margins
-    pdf = FPDF(format='Letter')
-    pdf.add_page()
-    pdf.set_margins(left=25, top=25, right=25)
-    pdf.set_auto_page_break(auto=True, margin=25)
-    
-    # Use Helvetica instead of Arial (core font)
-    pdf.set_font("Helvetica", size=11)
-    
-    # Split the cover letter into lines
-    lines = cover_letter.split('\n')
-    
-    # Add content to PDF with proper spacing
-    for i, line in enumerate(lines):
-        if line.strip() == '':  # Add spacing for empty lines
-            pdf.ln(5)
-        else:
-            # Format header (name) differently
-            if i == 0:  # First line (name)
-                pdf.set_font("Helvetica", "B", 14)
-                pdf.cell(0, 10, line, new_x=XPos.LMARGIN, new_y=YPos.NEXT)
-                pdf.set_font("Helvetica", size=11)
-            # Format contact info
-            elif i < 4:  # Next few lines (contact info)
-                pdf.cell(0, 6, line, new_x=XPos.LMARGIN, new_y=YPos.NEXT)
-            # Format date and address block
-            elif i < 9:  # Date and address block
-                pdf.cell(0, 6, line, new_x=XPos.LMARGIN, new_y=YPos.NEXT)
-            # Format main content
-            else:
-                # Handle bullet points (now using hyphen)
-                if line.strip().startswith('-'):
-                    pdf.ln(2)
-                    # Add extra indentation for bullet points
-                    pdf.cell(10)  # Indent
-                    pdf.multi_cell(0, 6, line)
-                else:
-                    pdf.multi_cell(0, 6, line)
-                    if not line.strip().startswith('Dear'):  # Add paragraph spacing
-                        pdf.ln(2)
-    
-    # Get PDF as bytes
-    pdf_output = io.BytesIO()
-    pdf.output(pdf_output)
-    return pdf_output.getvalue()
-
-def analyze_resume_ats(resume_text, job_description):
-    try:
-        client = openai.OpenAI(api_key=OPENAI_API_KEY)
-        response = client.chat.completions.create(
-            model="gpt-3.5-turbo",
-            messages=[
-                {"role": "system", "content": "You are an ATS optimization expert. Analyze resume compatibility with job requirements."},
-                {"role": "user", "content": f"""Analyze this resume against the job description and provide JSON formatted output with:
-                1. ats_score: number between 0-100
-                2. missing_keywords: array of important missing keywords
-                3. skills_to_highlight: array of existing skills to emphasize
-                4. improvement_suggestions: array of specific suggestions
-                5. key_job_requirements: array of critical job requirements
-
-                Resume:
-                {resume_text}
-
-                Job Description:
-                {job_description}"""}
-            ]
-        )
-        return response.choices[0].message.content
-    except Exception as e:
-        st.error(f"Error analyzing resume: {str(e)}")
-        return None
-
-def optimize_resume(resume_text, job_description, ats_analysis):
-    try:
-        client = openai.OpenAI(api_key=OPENAI_API_KEY)
-        response = client.chat.completions.create(
-            model="gpt-3.5-turbo",
-            messages=[
-                {"role": "system", "content": "You are an expert resume writer. Optimize resumes for ATS compatibility."},
-                {"role": "user", "content": f"""Optimize this resume based on the ATS analysis and job description.
-                Use these specific insights to improve the resume:
-
-                ATS Analysis:
-                {ats_analysis}
-
-                Focus on:
-                1. Incorporating missing keywords naturally
-                2. Emphasizing suggested skills to highlight
-                3. Implementing the specific improvement suggestions
-                4. Addressing key job requirements
-                5. Maintaining a clear, ATS-friendly format
-
-                Original Resume:
-                {resume_text}
-
-                Job Description:
-                {job_description}"""}
-            ]
-        )
-        return response.choices[0].message.content
-    except Exception as e:
-        st.error(f"Error optimizing resume: {str(e)}")
-        return None
 
 # Streamlit UI
 def main():
@@ -439,9 +112,9 @@ def main():
             "Select Cover Letter Style",
             ["brief", "standard", "detailed"],
             format_func=lambda x: {
-                "brief": "Brief (Concise, ~200 words)",
-                "standard": "Standard (Professional, ~350 words)",
-                "detailed": "Detailed (Comprehensive, ~500 words)"
+                "brief": "Brief (Concise)",
+                "standard": "Standard (Professional)",
+                "detailed": "Detailed (Comprehensive)"
             }[x]
         )
 
@@ -463,12 +136,13 @@ def main():
             st.subheader("Generated Cover Letter")
             st.text_area("Cover Letter", cover_letter, height=400)
 
+            # print(cover_letter)
             # Convert to PDF and add download button
             pdf_bytes = convert_to_pdf(cover_letter)
             st.download_button(
                 label="Download Cover Letter as PDF",
                 data=pdf_bytes,
-                file_name=f"{company.replace(' ', '_')}_Cover_Letter.pdf",
+                file_name=f"{pos.replace(' ', '_')}_{company.replace(' ', '_')}_Cover_Letter.pdf",
                 mime="application/pdf"
             )
 
@@ -513,3 +187,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
