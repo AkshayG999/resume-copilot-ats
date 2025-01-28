@@ -33,9 +33,9 @@ def generate_cover_letter(company_name, position, hiring_manager, alignment, why
     templates = {
         "brief": {
             "skills_count": 4,
-            "intro": f"I am writing to express my interest in the {position} position at {company_name}. With proven expertise in software development and a track record of delivering impactful solutions,",
+            "intro": f"I am writing to express my interest in the {position} position at {company_name}. With proven expertise in software development and a track record of delivering impactful solutions, I am excited about the opportunity to bring my unique skills and experiences to your team. My background includes working on various projects that have honed my abilities in problem-solving and innovative thinking.",
             "skills_intro": "Key technical skills:",
-            "closing": "I would welcome the opportunity to discuss how my skills align with your needs."
+            "closing": "I would welcome the opportunity to discuss how my skills align with your needs and how I can contribute to the continued success of {company_name}. Thank you for considering my application."
         },
         "standard": {
             "skills_count": 5,

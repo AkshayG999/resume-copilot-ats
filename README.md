@@ -1,6 +1,5 @@
 # Smart ATS Resume Toolkit
 
-> Your all-in-one solution for ATS-optimized resumes and cover letters
 
 Generate professional resumes and cover letters optimized for Applicant Tracking Systems (ATS). This tool helps job seekers create compelling job application documents that pass through ATS screening and catch recruiters' attention.
 

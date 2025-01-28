@@ -90,7 +90,7 @@ def main():
             candidate_info = extract_candidate_info(uploaded_file=uploaded_file)
             st.success("Resume uploaded and processed successfully!")
         else:
-            resume_path = "/Users/apple/Desktop/Nirmitee/MyProjects/cover_letter_generator/AKSHAY GAIKWAD - Resume.pdf"
+            resume_path = "AKSHAY GAIKWAD - Resume.pdf"
             candidate_info = extract_candidate_info(resume_path=resume_path)
             st.info("Using default resume template. Upload your resume for personalized content.")
 
