@@ -94,7 +94,7 @@ OPENAI_API_KEY=your_api_key_here
 
 1. Run the Streamlit app:
 ```bash
-streamlit run cover_letter_generator.py
+streamlit run app.py
 ```
 
 2. Upload your resume (PDF format) or use the default template
